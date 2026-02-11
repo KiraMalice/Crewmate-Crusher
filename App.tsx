@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { GameState, GameStatus, CrewmateInfo, CREWMATE_COLORS } from './types';
-import { Crewmate } from './components/Crewmate';
-import { GameOverModal } from './components/GameOverModal';
-import { soundService } from './services/sounds';
+import { GameState, GameStatus, CrewmateInfo, CREWMATE_COLORS } from './types.ts';
+import { Crewmate } from './components/Crewmate.tsx';
+import { GameOverModal } from './components/GameOverModal.tsx';
+import { soundService } from './services/sounds.ts';
 
 const GAME_DURATION = 60; // 1 minute in seconds
 const GRID_SIZE = 9;
