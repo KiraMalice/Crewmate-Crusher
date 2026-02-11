@@ -2,23 +2,24 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { createRoot } from 'react-dom/client';
 import { GoogleGenAI } from "@google/genai";
 
-// --- Types & Constants ---
+// --- Configuration & Constants ---
+const GAME_DURATION = 30;
+const CREWMATE_COLORS = [
+  '#C51111', '#132ED1', '#117F2D', '#ED54BA', '#EF7D0D', 
+  '#F5F557', '#3F474E', '#D6E0F0', '#6B2FBB', '#71491E', '#38FEDB', '#50EF39'
+];
+
 type GameStatus = 'idle' | 'counting' | 'playing' | 'ended';
 
-interface CrewmateInfo {
+interface MoleState {
   id: number;
   active: boolean;
   color: string;
   feedback: 'hit' | 'miss' | null;
 }
 
-const CREWMATE_COLORS = [
-  '#C51111', '#132ED1', '#117F2D', '#ED54BA', '#EF7D0D', 
-  '#F5F557', '#3F474E', '#D6E0F0', '#6B2FBB', '#71491E', '#38FEDB', '#50EF39'
-];
-
-// --- Audio Service ---
-class GameAudio {
+// --- Audio Engine ---
+class SFXEngine {
   private ctx: AudioContext | null = null;
 
   private init() {
@@ -44,38 +45,38 @@ class GameAudio {
     osc.stop(this.ctx.currentTime + duration);
   }
 
-  hit() { this.playTone(150, 'square', 0.1, 0.2, 40); }
-  miss() { this.playTone(100, 'sine', 0.2, 0.1, 50); }
-  pop() { this.playTone(200, 'sine', 0.1, 0.05, 600); }
-  tick() { this.playTone(800, 'sine', 0.05, 0.02); }
-  start() { this.playTone(400, 'triangle', 0.3, 0.1, 800); }
+  pop() { this.playTone(180, 'sine', 0.1, 0.05, 500); }
+  hit() { this.playTone(120, 'square', 0.1, 0.15, 30); }
+  miss() { this.playTone(80, 'sine', 0.2, 0.1, 40); }
+  tick() { this.playTone(900, 'sine', 0.04, 0.02); }
+  start() { this.playTone(300, 'triangle', 0.4, 0.1, 900); }
 }
 
-const audio = new GameAudio();
+const sfx = new SFXEngine();
 
 // --- Components ---
 
-const Crewmate: React.FC<{ color: string; active: boolean; onWhack: () => void }> = ({ color, active, onWhack }) => (
+const CrewmateVisual: React.FC<{ color: string; active: boolean; onWhack: () => void }> = ({ color, active, onWhack }) => (
   <div 
-    className={`absolute inset-0 flex items-center justify-center transition-all duration-200 transform cursor-pointer ${
+    className={`absolute inset-0 flex items-center justify-center transition-all duration-300 transform cursor-pointer ${
       active ? 'translate-y-2 opacity-100 scale-100' : 'translate-y-full opacity-0 scale-75 pointer-events-none'
     }`}
     onClick={(e) => { e.stopPropagation(); onWhack(); }}
   >
-    <div className="relative w-2/3 h-4/5 flex flex-col items-center">
+    <div className="relative w-2/3 h-3/4 flex flex-col items-center crewmate-float">
       {/* Backpack */}
-      <div className="absolute -left-2 top-1/4 w-5 h-1/2 rounded-l-lg" style={{ backgroundColor: color, filter: 'brightness(0.7)' }} />
+      <div className="absolute -left-2 top-1/4 w-[25%] h-1/2 rounded-l-lg z-0" style={{ backgroundColor: color, filter: 'brightness(0.6)' }} />
       {/* Body */}
-      <div className="w-full h-full rounded-t-[40%] rounded-b-xl relative z-10 border-b-8 border-black/30" style={{ backgroundColor: color }}>
+      <div className="w-full h-full rounded-t-[45%] rounded-b-xl relative z-10 border-b-[6px] border-black/40 shadow-xl" style={{ backgroundColor: color }}>
         {/* Visor */}
-        <div className="absolute top-[20%] left-[15%] w-[80%] h-[28%] bg-sky-200 rounded-2xl border-4 border-black/40 overflow-hidden shadow-inner">
-           <div className="absolute top-1 left-1 w-1/2 h-1/3 bg-white/60 rounded-full" />
+        <div className="absolute top-[20%] left-[12%] w-[82%] h-[30%] bg-[#A1E3EF] rounded-3xl border-[3px] border-black/50 overflow-hidden">
+           <div className="absolute top-1 left-2 w-1/2 h-1/3 bg-white/50 rounded-full" />
         </div>
       </div>
       {/* Legs */}
-      <div className="flex justify-between w-full px-1 -mt-4 z-0">
-        <div className="w-[38%] h-8 rounded-b-xl" style={{ backgroundColor: color, filter: 'brightness(0.9)' }} />
-        <div className="w-[38%] h-8 rounded-b-xl" style={{ backgroundColor: color, filter: 'brightness(0.9)' }} />
+      <div className="flex justify-between w-full px-1 -mt-3 z-0">
+        <div className="w-[36%] h-6 rounded-b-xl" style={{ backgroundColor: color, filter: 'brightness(0.8)' }} />
+        <div className="w-[36%] h-6 rounded-b-xl" style={{ backgroundColor: color, filter: 'brightness(0.8)' }} />
       </div>
     </div>
   </div>
@@ -84,96 +85,104 @@ const Crewmate: React.FC<{ color: string; active: boolean; onWhack: () => void }
 const App: React.FC = () => {
   const [status, setStatus] = useState<GameStatus>('idle');
   const [score, setScore] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(45);
+  const [timeLeft, setTimeLeft] = useState(GAME_DURATION);
   const [highScore, setHighScore] = useState(() => Number(localStorage.getItem('crewmate_hs')) || 0);
-  const [moles, setMoles] = useState<CrewmateInfo[]>(Array.from({ length: 9 }, (_, i) => ({ id: i, active: false, color: CREWMATE_COLORS[0], feedback: null })));
+  const [moles, setMoles] = useState<MoleState[]>(Array.from({ length: 9 }, (_, i) => ({ id: i, active: false, color: CREWMATE_COLORS[0], feedback: null })));
   const [countdown, setCountdown] = useState(3);
-  const [report, setReport] = useState("");
-  const [loadingReport, setLoadingReport] = useState(false);
+  const [securityLog, setSecurityLog] = useState("");
+  const [isGeneratingLog, setIsGeneratingLog] = useState(false);
 
-  const timerRef = useRef<number | null>(null);
-  const spawnRef = useRef<number | null>(null);
-
+  // Initializing Gemini client
   const ai = useMemo(() => new GoogleGenAI({ apiKey: process.env.API_KEY }), []);
+  
+  const spawnTimerRef = useRef<number | null>(null);
+  const gameTimerRef = useRef<number | null>(null);
 
-  const generateReport = async (finalScore: number) => {
-    setLoadingReport(true);
+  const fetchSecurityLog = async (finalScore: number) => {
+    setIsGeneratingLog(true);
     try {
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `User got a score of ${finalScore} in an Among Us Whack-a-Mole style game. Write a short, funny, snarky security report as if from the Ship's AI or an Imposter. Keep it to 2 sentences and use Among Us slang like sus, vent, and tasks.`,
+        contents: `The player just scored ${finalScore} in a "Whack-a-Crewmate" game. Generate a short, snarky 2-sentence security report from the Ship's computer. Mention things like "electrical", "venting", or "suspicious" in a funny way.`,
       });
-      setReport(response.text || "Scanning complete. No survivors detected.");
+      setSecurityLog(response.text || "Security systems compromised. Report missing.");
     } catch (e) {
-      setReport("The security logs were wiped by an Imposter in Electrical.");
+      setSecurityLog("Communication with MIRA HQ lost. Probably an impostor in the server room.");
     } finally {
-      setLoadingReport(false);
+      setIsGeneratingLog(false);
     }
   };
 
-  const endGame = useCallback(() => {
+  const stopGame = useCallback(() => {
     setStatus('ended');
     if (score > highScore) {
       setHighScore(score);
       localStorage.setItem('crewmate_hs', score.toString());
     }
-    generateReport(score);
-    if (timerRef.current) clearInterval(timerRef.current);
-    if (spawnRef.current) clearInterval(spawnRef.current);
-  }, [score, highScore]);
+    fetchSecurityLog(score);
+    if (gameTimerRef.current) window.clearInterval(gameTimerRef.current);
+    if (spawnTimerRef.current) window.clearInterval(spawnTimerRef.current);
+  }, [score, highScore, ai]);
 
   const startGame = () => {
     setScore(0);
-    setTimeLeft(45);
+    setTimeLeft(GAME_DURATION);
     setCountdown(3);
-    setReport("");
+    setSecurityLog("");
     setStatus('counting');
-    audio.start();
+    sfx.start();
   };
 
   useEffect(() => {
     if (status === 'counting') {
-      const id = setInterval(() => {
+      const id = window.setInterval(() => {
         setCountdown(c => {
           if (c <= 1) {
-            clearInterval(id);
+            window.clearInterval(id);
             setStatus('playing');
             return 0;
           }
-          audio.tick();
+          sfx.tick();
           return c - 1;
         });
       }, 1000);
-      return () => clearInterval(id);
+      return () => window.clearInterval(id);
     }
   }, [status]);
 
   useEffect(() => {
     if (status === 'playing') {
-      timerRef.current = window.setInterval(() => {
+      // Game timer
+      gameTimerRef.current = window.setInterval(() => {
         setTimeLeft(t => {
           if (t <= 1) {
-            endGame();
+            stopGame();
             return 0;
           }
-          if (t < 6) audio.tick();
+          if (t < 6) sfx.tick();
           return t - 1;
         });
       }, 1000);
 
-      const spawn = () => {
+      // Spawning logic with adaptive difficulty
+      const spawnLoop = () => {
+        const progress = (GAME_DURATION - timeLeft) / GAME_DURATION; // 0 to 1
+        // Faster spawns as time goes on
+        const spawnDelay = Math.max(200, 800 - (progress * 600));
+        
         setMoles(prev => {
           const inactive = prev.filter(m => !m.active);
           if (inactive.length === 0) return prev;
-          const target = inactive[Math.floor(Math.random() * inactive.length)];
           
-          audio.pop();
+          const targetIndex = Math.floor(Math.random() * inactive.length);
+          const target = inactive[targetIndex];
+          sfx.pop();
           
-          // Auto-hide logic based on remaining time
-          const duration = Math.max(450, 1100 * (timeLeft / 45));
+          // Mole stays up for shorter time as difficulty increases
+          const activeDuration = Math.max(350, 1000 - (progress * 700));
           setTimeout(() => {
             setMoles(curr => curr.map(m => m.id === target.id ? { ...m, active: false } : m));
-          }, duration);
+          }, activeDuration);
 
           return prev.map(m => m.id === target.id ? { 
             ...m, 
@@ -181,46 +190,47 @@ const App: React.FC = () => {
             color: CREWMATE_COLORS[Math.floor(Math.random() * CREWMATE_COLORS.length)] 
           } : m);
         });
+
+        spawnTimerRef.current = window.setTimeout(spawnLoop, spawnDelay);
       };
 
-      const spawnRate = Math.max(300, 750 * (timeLeft / 45));
-      spawnRef.current = window.setInterval(spawn, spawnRate);
+      spawnLoop();
       
       return () => {
-        if (timerRef.current) clearInterval(timerRef.current);
-        if (spawnRef.current) clearInterval(spawnRef.current);
+        if (gameTimerRef.current) window.clearInterval(gameTimerRef.current);
+        if (spawnTimerRef.current) window.clearTimeout(spawnTimerRef.current);
       };
     }
-  }, [status, timeLeft, endGame]);
+  }, [status, timeLeft, stopGame]);
 
-  const handleWhack = (id: number) => {
+  const onMoleWhack = (id: number) => {
     if (status !== 'playing') return;
     setMoles(prev => {
-      const mole = prev.find(m => m.id === id);
-      if (mole?.active) {
-        audio.hit();
+      const m = prev.find(x => x.id === id);
+      if (m?.active) {
+        sfx.hit();
         setScore(s => s + 1);
-        return prev.map(m => m.id === id ? { ...m, active: false, feedback: 'hit' } : m);
+        return prev.map(x => x.id === id ? { ...x, active: false, feedback: 'hit' } : x);
       }
       return prev;
     });
     setTimeout(() => setMoles(p => p.map(m => m.id === id ? { ...m, feedback: null } : m)), 200);
   };
 
-  const handleMiss = (id: number) => {
+  const onEmptyClick = (id: number) => {
     if (status !== 'playing') return;
-    const mole = moles.find(m => m.id === id);
-    if (!mole?.active && !mole?.feedback) {
-      audio.miss();
-      setMoles(prev => prev.map(m => m.id === id ? { ...m, feedback: 'miss' } : m));
+    const m = moles.find(x => x.id === id);
+    if (!m?.active && !m?.feedback) {
+      sfx.miss();
+      setMoles(prev => prev.map(x => x.id === id ? { ...x, feedback: 'miss' } : x));
       setTimeout(() => setMoles(p => p.map(m => m.id === id ? { ...m, feedback: null } : m)), 200);
     }
   };
 
   return (
-    <div className="relative min-h-screen bg-[#05070a] flex flex-col items-center p-4 pt-safe-top overflow-hidden font-inter">
-      {/* Background Stars */}
-      <div className="fixed inset-0 opacity-40 pointer-events-none">
+    <div className="min-h-screen bg-[#05070a] text-white font-inter flex flex-col items-center p-4 overflow-hidden relative">
+      {/* Dynamic Starfield Background */}
+      <div className="fixed inset-0 pointer-events-none opacity-20 z-0">
         {Array.from({ length: 40 }).map((_, i) => (
           <div key={i} className="absolute bg-white rounded-full animate-pulse" 
             style={{ 
@@ -228,121 +238,128 @@ const App: React.FC = () => {
               height: Math.random() * 2 + 1 + 'px', 
               top: Math.random() * 100 + '%', 
               left: Math.random() * 100 + '%',
-              animationDelay: Math.random() * 3 + 's'
+              animationDelay: Math.random() * 5 + 's',
+              animationDuration: (Math.random() * 3 + 2) + 's'
             }} 
           />
         ))}
       </div>
 
-      {/* Glass Header */}
-      <div className="w-full max-w-md z-20 flex justify-between items-center bg-slate-900/60 backdrop-blur-xl border border-white/10 p-5 rounded-3xl shadow-2xl mb-6 mt-4">
-        <div>
-          <p className="text-[10px] uppercase font-black tracking-widest text-slate-500 mb-1">Ejected</p>
-          <p className="text-4xl font-black font-orbitron text-red-500 tabular-nums leading-none">{score}</p>
+      {/* HUD Scoreboard */}
+      <div className="w-full max-w-sm flex justify-between items-center bg-slate-900/40 backdrop-blur-xl border border-white/10 p-5 rounded-[2.5rem] mt-6 z-20 shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
+        <div className="flex flex-col">
+          <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider">Ejected</span>
+          <span className="text-4xl font-orbitron font-black text-red-500 tabular-nums leading-none">{score}</span>
         </div>
-        <div className="text-center">
-          <p className="text-[10px] uppercase font-black tracking-widest text-slate-500 mb-1">Link</p>
-          <p className={`text-4xl font-black font-orbitron tabular-nums leading-none transition-colors ${timeLeft < 10 ? 'text-orange-500 animate-pulse' : 'text-white'}`}>
+        <div className="flex flex-col items-center">
+          <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider">Time</span>
+          <span className={`text-4xl font-orbitron font-black tabular-nums leading-none ${timeLeft < 10 ? 'text-orange-500 animate-pulse' : 'text-white'}`}>
             0:{timeLeft.toString().padStart(2, '0')}
-          </p>
+          </span>
         </div>
-        <div className="text-right">
-          <p className="text-[10px] uppercase font-black tracking-widest text-slate-500 mb-1">Record</p>
-          <p className="text-4xl font-black font-orbitron text-cyan-400 tabular-nums leading-none">{highScore}</p>
+        <div className="flex flex-col items-end">
+          <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider">Record</span>
+          <span className="text-4xl font-orbitron font-black text-cyan-400 tabular-nums leading-none">{highScore}</span>
         </div>
       </div>
 
-      {/* Main Play Area */}
-      <div className="relative flex-grow w-full max-w-md flex items-center justify-center">
+      {/* Game Viewport */}
+      <div className="flex-grow w-full max-w-sm flex items-center justify-center relative z-10">
         {status === 'idle' && (
-          <div className="text-center animate-in fade-in zoom-in duration-500 z-30">
-            <h1 className="text-6xl font-black font-orbitron italic mb-4 tracking-tighter leading-[0.85]">
-              CREWMATE<br /><span className="text-red-600 drop-shadow-[0_0_15px_rgba(220,38,38,0.6)]">CRUNCH</span>
+          <div className="text-center z-30 animate-in fade-in zoom-in duration-700">
+            <h1 className="text-6xl font-orbitron font-black tracking-tighter italic mb-4 leading-[0.8]">
+              CREWMATE<br /><span className="text-red-600 drop-shadow-[0_0_20px_rgba(220,38,38,0.7)]">CRUNCH</span>
             </h1>
-            <p className="text-slate-400 text-sm mb-12 max-w-[280px] mx-auto leading-relaxed font-semibold">
-              Eject suspicious crewmates before they complete their tasks.
+            <p className="text-slate-400 text-xs mb-12 max-w-[220px] mx-auto font-bold uppercase tracking-[0.2em] leading-relaxed">
+              Whack the suspicious crewmates before they vent!
             </p>
             <button onClick={startGame} className="group relative">
               <div className="absolute -inset-1 bg-red-600 rounded-2xl blur opacity-30 group-hover:opacity-100 transition duration-500" />
-              <div className="relative px-12 py-6 bg-red-600 rounded-2xl font-black text-2xl font-orbitron uppercase tracking-widest shadow-xl transform transition active:scale-90">
-                Start Mission
+              <div className="relative bg-red-600 px-12 py-6 rounded-2xl text-2xl font-orbitron font-black uppercase tracking-widest shadow-2xl active:scale-90 transition-all">
+                Launch
               </div>
             </button>
           </div>
         )}
 
         {status === 'counting' && (
-          <div className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none">
-            <span className="text-[14rem] font-black font-orbitron text-white/10 animate-ping">
+          <div className="absolute inset-0 flex items-center justify-center z-40">
+            <span className="text-[12rem] font-orbitron font-black text-white/5 animate-ping">
               {countdown}
             </span>
           </div>
         )}
 
         {(status === 'playing' || status === 'counting') && (
-          <div className={`grid grid-cols-3 gap-3 w-full transition-all duration-700 ${status === 'counting' ? 'opacity-20 scale-95 blur-sm' : 'opacity-100 scale-100'}`}>
+          <div className={`grid grid-cols-3 gap-3 w-full transition-all duration-700 ${status === 'counting' ? 'opacity-20 scale-90 blur-xl' : 'opacity-100 scale-100'}`}>
             {moles.map(m => (
               <div key={m.id} 
-                className={`vent-hole aspect-square rounded-[2rem] border-4 transition-all duration-200 relative overflow-hidden ${
-                  m.feedback === 'hit' ? 'border-green-500 shadow-[0_0_30px_rgba(34,197,94,0.4)] scale-95' :
-                  m.feedback === 'miss' ? 'border-red-500 shadow-[0_0_30px_rgba(239,68,68,0.4)]' :
+                className={`vent-hole aspect-square rounded-[2.5rem] border-4 transition-all duration-300 relative overflow-hidden vent-slats ${
+                  m.feedback === 'hit' ? 'border-green-500 shadow-[0_0_35px_rgba(34,197,94,0.4)] scale-95' :
+                  m.feedback === 'miss' ? 'border-red-500 shadow-[0_0_35px_rgba(239,68,68,0.4)]' :
                   'border-slate-800'
                 }`}
-                onClick={() => handleMiss(m.id)}
+                onClick={() => onEmptyClick(m.id)}
               >
-                <div className="absolute inset-0 bg-black/20 pointer-events-none" />
-                <Crewmate color={m.color} active={m.active} onWhack={() => handleWhack(m.id)} />
+                <div className="absolute inset-0 bg-black/10 pointer-events-none" />
+                <CrewmateVisual color={m.color} active={m.active} onWhack={() => onMoleWhack(m.id)} />
               </div>
             ))}
           </div>
         )}
       </div>
 
-      {/* Result Modal */}
+      {/* Results Overlay */}
       {status === 'ended' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-md p-6 animate-in fade-in duration-300">
-          <div className="w-full max-w-sm bg-slate-900 border-t-8 border-red-600 rounded-[3rem] p-10 text-center shadow-2xl">
-            <h2 className="text-3xl font-black font-orbitron mb-8 text-white uppercase italic tracking-tighter">Mission Over</h2>
+        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-6 backdrop-blur-md animate-in fade-in duration-500">
+          <div className="w-full max-w-sm bg-[#0a0f18] border-t-[10px] border-red-600 rounded-[3rem] p-10 text-center shadow-[0_30px_100px_rgba(0,0,0,0.8)] relative overflow-hidden">
+            {/* Decoration */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-red-600/5 blur-[80px] -mr-16 -mt-16" />
             
-            <div className="grid grid-cols-2 gap-4 mb-8">
-              <div className="bg-slate-800/40 p-5 rounded-2xl border border-white/5">
-                <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">Score</p>
+            <h2 className="text-3xl font-orbitron font-black text-white mb-8 italic uppercase tracking-tighter">Security Debrief</h2>
+            
+            <div className="flex gap-4 mb-8">
+              <div className="flex-1 bg-slate-900/60 p-6 rounded-3xl border border-white/5 shadow-inner">
+                <p className="text-[10px] text-slate-500 font-black uppercase mb-1">Total Ejected</p>
                 <p className="text-5xl font-black text-white">{score}</p>
               </div>
-              <div className="bg-slate-800/40 p-5 rounded-2xl border border-white/5">
-                <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">Peak</p>
+              <div className="flex-1 bg-slate-900/60 p-6 rounded-3xl border border-white/5 shadow-inner">
+                <p className="text-[10px] text-slate-500 font-black uppercase mb-1">Max Record</p>
                 <p className="text-5xl font-black text-cyan-400">{highScore}</p>
               </div>
             </div>
 
-            <div className="bg-black/80 p-6 rounded-2xl border-l-4 border-red-500 text-left mb-12 min-h-[120px] flex items-center shadow-inner">
-              {loadingReport ? (
-                <div className="w-full flex justify-center py-2 space-x-2">
+            <div className="bg-black/60 p-6 rounded-[2rem] border-l-4 border-red-500 text-left mb-10 min-h-[120px] flex items-center shadow-2xl">
+              {isGeneratingLog ? (
+                <div className="w-full flex justify-center items-center py-4 space-x-2">
                   <div className="w-2 h-2 bg-red-600 rounded-full animate-bounce" />
+                  <div className="w-2 h-2 bg-red-600 rounded-full animate-bounce [animation-delay:0.1s]" />
                   <div className="w-2 h-2 bg-red-600 rounded-full animate-bounce [animation-delay:0.2s]" />
-                  <div className="w-2 h-2 bg-red-600 rounded-full animate-bounce [animation-delay:0.4s]" />
                 </div>
               ) : (
-                <p className="text-sm text-slate-300 italic font-medium leading-relaxed">"{report}"</p>
+                <p className="text-sm text-slate-300 italic font-semibold leading-relaxed font-inter">
+                  <span className="text-red-500 font-black block text-[10px] uppercase mb-1 not-italic">Encrypted Report:</span>
+                  "{securityLog}"
+                </p>
               )}
             </div>
 
-            <button onClick={startGame} className="w-full py-6 bg-white text-black font-black font-orbitron text-2xl rounded-2xl shadow-lg transform transition hover:brightness-90 active:scale-95">
-              RETRY
+            <button onClick={startGame} className="w-full bg-white text-black font-orbitron font-black py-6 rounded-2xl text-2xl shadow-xl active:scale-95 transition-all hover:bg-slate-100">
+              New Mission
             </button>
           </div>
         </div>
       )}
 
-      {/* Sub Footer */}
-      <div className="mt-8 mb-4 z-20 text-[10px] font-black text-slate-700 uppercase tracking-[0.5em] text-center">
-        Ejection Log: Active // Skeld.AI
+      {/* Footer Tag */}
+      <div className="py-6 text-[10px] font-black text-slate-800 tracking-[0.8em] uppercase z-10">
+        Signal Secure // HQ-7
       </div>
     </div>
   );
 };
 
-// --- Rendering ---
+// --- Entry Point ---
 const container = document.getElementById('root');
 if (container) {
   const root = createRoot(container);
