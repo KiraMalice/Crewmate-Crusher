@@ -1,5 +1,5 @@
 {
-  "name": "Crewmate Crunch: Whack-a-Mate",
-  "description": "A high-octane whack-a-mole style game where you hunt down crewmates in space. Features persistent high scores and AI-generated post-game reports.",
+  "name": "Crewmate Crunch 2.0",
+  "description": "High-fidelity Among Us inspired Whack-a-Mole game with AI security reports and adaptive space combat difficulty.",
   "requestFramePermissions": []
 }
