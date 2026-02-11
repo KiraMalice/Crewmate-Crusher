@@ -1,7 +1,7 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: AIzaSyCv5mQOw8lKHZewHGiKS4-Yv_Z-4GLu_VU });
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const getPostGameReport = async (score: number, isHighscore: boolean): Promise<string> => {
   try {

@@ -1,0 +1,6 @@
+
+/* Global styles moved to index.html for maximum compatibility */
+body {
+  margin: 0;
+  -webkit-tap-highlight-color: transparent;
+}
