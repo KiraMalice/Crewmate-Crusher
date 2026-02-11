@@ -1,0 +1,5 @@
+{
+  "name": "Crewmate Crunch: Whack-a-Mate",
+  "description": "A high-octane whack-a-mole style game where you hunt down crewmates in space. Features persistent high scores and AI-generated post-game reports.",
+  "requestFramePermissions": []
+}
