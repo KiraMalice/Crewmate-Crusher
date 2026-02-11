@@ -27,6 +27,7 @@
         user-select: none;
         -webkit-tap-highlight-color: transparent;
         color: white;
+        touch-action: manipulation;
       }
       .vent-hole {
         background: radial-gradient(circle at center, #1a1d23 0%, #000000 100%);
@@ -54,6 +55,9 @@
         50% { transform: translateY(-5px); }
       }
       .crewmate-float { animation: float 2s ease-in-out infinite; }
+      
+      /* Mobile fix for active states */
+      button:active { transform: scale(0.95); }
     </style>
     <script type="importmap">
 {

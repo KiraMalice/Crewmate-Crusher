@@ -61,7 +61,7 @@ const CrewmateVisual: React.FC<{ color: string; active: boolean; onWhack: () => 
     className={`absolute inset-0 flex items-center justify-center transition-all duration-300 transform cursor-pointer ${
       active ? 'translate-y-2 opacity-100 scale-100' : 'translate-y-full opacity-0 scale-75 pointer-events-none'
     }`}
-    onClick={(e) => { e.stopPropagation(); onWhack(); }}
+    onPointerDown={(e) => { e.stopPropagation(); onWhack(); }}
   >
     <div className="relative w-2/3 h-3/4 flex flex-col items-center crewmate-float">
       {/* Backpack */}
@@ -92,7 +92,6 @@ const App: React.FC = () => {
   const [securityLog, setSecurityLog] = useState("");
   const [isGeneratingLog, setIsGeneratingLog] = useState(false);
 
-  // Initializing Gemini client
   const ai = useMemo(() => new GoogleGenAI({ apiKey: process.env.API_KEY }), []);
   
   const spawnTimerRef = useRef<number | null>(null);
@@ -121,7 +120,7 @@ const App: React.FC = () => {
     }
     fetchSecurityLog(score);
     if (gameTimerRef.current) window.clearInterval(gameTimerRef.current);
-    if (spawnTimerRef.current) window.clearInterval(spawnTimerRef.current);
+    if (spawnTimerRef.current) window.clearTimeout(spawnTimerRef.current);
   }, [score, highScore, ai]);
 
   const startGame = () => {
@@ -152,7 +151,6 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (status === 'playing') {
-      // Game timer
       gameTimerRef.current = window.setInterval(() => {
         setTimeLeft(t => {
           if (t <= 1) {
@@ -164,22 +162,18 @@ const App: React.FC = () => {
         });
       }, 1000);
 
-      // Spawning logic with adaptive difficulty
       const spawnLoop = () => {
-        const progress = (GAME_DURATION - timeLeft) / GAME_DURATION; // 0 to 1
-        // Faster spawns as time goes on
-        const spawnDelay = Math.max(200, 800 - (progress * 600));
+        const progress = (GAME_DURATION - timeLeft) / GAME_DURATION;
+        const spawnDelay = Math.max(180, 750 - (progress * 550));
         
         setMoles(prev => {
           const inactive = prev.filter(m => !m.active);
           if (inactive.length === 0) return prev;
           
-          const targetIndex = Math.floor(Math.random() * inactive.length);
-          const target = inactive[targetIndex];
+          const target = inactive[Math.floor(Math.random() * inactive.length)];
           sfx.pop();
           
-          // Mole stays up for shorter time as difficulty increases
-          const activeDuration = Math.max(350, 1000 - (progress * 700));
+          const activeDuration = Math.max(300, 900 - (progress * 600));
           setTimeout(() => {
             setMoles(curr => curr.map(m => m.id === target.id ? { ...m, active: false } : m));
           }, activeDuration);
@@ -229,7 +223,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#05070a] text-white font-inter flex flex-col items-center p-4 overflow-hidden relative">
-      {/* Dynamic Starfield Background */}
+      {/* Background Starfield */}
       <div className="fixed inset-0 pointer-events-none opacity-20 z-0">
         {Array.from({ length: 40 }).map((_, i) => (
           <div key={i} className="absolute bg-white rounded-full animate-pulse" 
@@ -238,15 +232,14 @@ const App: React.FC = () => {
               height: Math.random() * 2 + 1 + 'px', 
               top: Math.random() * 100 + '%', 
               left: Math.random() * 100 + '%',
-              animationDelay: Math.random() * 5 + 's',
-              animationDuration: (Math.random() * 3 + 2) + 's'
+              animationDelay: Math.random() * 5 + 's'
             }} 
           />
         ))}
       </div>
 
-      {/* HUD Scoreboard */}
-      <div className="w-full max-w-sm flex justify-between items-center bg-slate-900/40 backdrop-blur-xl border border-white/10 p-5 rounded-[2.5rem] mt-6 z-20 shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
+      {/* HUD */}
+      <div className="w-full max-w-sm flex justify-between items-center bg-slate-900/40 backdrop-blur-xl border border-white/10 p-5 rounded-[2.5rem] mt-6 z-20 shadow-2xl">
         <div className="flex flex-col">
           <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider">Ejected</span>
           <span className="text-4xl font-orbitron font-black text-red-500 tabular-nums leading-none">{score}</span>
@@ -270,12 +263,12 @@ const App: React.FC = () => {
             <h1 className="text-6xl font-orbitron font-black tracking-tighter italic mb-4 leading-[0.8]">
               CREWMATE<br /><span className="text-red-600 drop-shadow-[0_0_20px_rgba(220,38,38,0.7)]">CRUNCH</span>
             </h1>
-            <p className="text-slate-400 text-xs mb-12 max-w-[220px] mx-auto font-bold uppercase tracking-[0.2em] leading-relaxed">
-              Whack the suspicious crewmates before they vent!
+            <p className="text-slate-400 text-xs mb-12 max-w-[220px] mx-auto font-bold uppercase tracking-[0.2em]">
+              Clear the suspicious entities
             </p>
-            <button onClick={startGame} className="group relative">
+            <button onPointerDown={startGame} className="group relative">
               <div className="absolute -inset-1 bg-red-600 rounded-2xl blur opacity-30 group-hover:opacity-100 transition duration-500" />
-              <div className="relative bg-red-600 px-12 py-6 rounded-2xl text-2xl font-orbitron font-black uppercase tracking-widest shadow-2xl active:scale-90 transition-all">
+              <div className="relative bg-red-600 px-12 py-6 rounded-2xl text-2xl font-orbitron font-black uppercase tracking-widest shadow-2xl transition-all">
                 Launch
               </div>
             </button>
@@ -299,7 +292,7 @@ const App: React.FC = () => {
                   m.feedback === 'miss' ? 'border-red-500 shadow-[0_0_35px_rgba(239,68,68,0.4)]' :
                   'border-slate-800'
                 }`}
-                onClick={() => onEmptyClick(m.id)}
+                onPointerDown={() => onEmptyClick(m.id)}
               >
                 <div className="absolute inset-0 bg-black/10 pointer-events-none" />
                 <CrewmateVisual color={m.color} active={m.active} onWhack={() => onMoleWhack(m.id)} />
@@ -312,24 +305,19 @@ const App: React.FC = () => {
       {/* Results Overlay */}
       {status === 'ended' && (
         <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-6 backdrop-blur-md animate-in fade-in duration-500">
-          <div className="w-full max-w-sm bg-[#0a0f18] border-t-[10px] border-red-600 rounded-[3rem] p-10 text-center shadow-[0_30px_100px_rgba(0,0,0,0.8)] relative overflow-hidden">
-            {/* Decoration */}
-            <div className="absolute top-0 right-0 w-32 h-32 bg-red-600/5 blur-[80px] -mr-16 -mt-16" />
-            
-            <h2 className="text-3xl font-orbitron font-black text-white mb-8 italic uppercase tracking-tighter">Security Debrief</h2>
-            
+          <div className="w-full max-w-sm bg-[#0a0f18] border-t-[10px] border-red-600 rounded-[3rem] p-10 text-center shadow-2xl relative overflow-hidden">
+            <h2 className="text-3xl font-orbitron font-black text-white mb-8 italic uppercase tracking-tighter">Mission Debrief</h2>
             <div className="flex gap-4 mb-8">
-              <div className="flex-1 bg-slate-900/60 p-6 rounded-3xl border border-white/5 shadow-inner">
-                <p className="text-[10px] text-slate-500 font-black uppercase mb-1">Total Ejected</p>
+              <div className="flex-1 bg-slate-900/60 p-6 rounded-3xl border border-white/5">
+                <p className="text-[10px] text-slate-500 font-black uppercase mb-1">Ejected</p>
                 <p className="text-5xl font-black text-white">{score}</p>
               </div>
-              <div className="flex-1 bg-slate-900/60 p-6 rounded-3xl border border-white/5 shadow-inner">
-                <p className="text-[10px] text-slate-500 font-black uppercase mb-1">Max Record</p>
+              <div className="flex-1 bg-slate-900/60 p-6 rounded-3xl border border-white/5">
+                <p className="text-[10px] text-slate-500 font-black uppercase mb-1">Record</p>
                 <p className="text-5xl font-black text-cyan-400">{highScore}</p>
               </div>
             </div>
-
-            <div className="bg-black/60 p-6 rounded-[2rem] border-l-4 border-red-500 text-left mb-10 min-h-[120px] flex items-center shadow-2xl">
+            <div className="bg-black/60 p-6 rounded-[2rem] border-l-4 border-red-500 text-left mb-10 min-h-[120px] flex items-center">
               {isGeneratingLog ? (
                 <div className="w-full flex justify-center items-center py-4 space-x-2">
                   <div className="w-2 h-2 bg-red-600 rounded-full animate-bounce" />
@@ -337,21 +325,19 @@ const App: React.FC = () => {
                   <div className="w-2 h-2 bg-red-600 rounded-full animate-bounce [animation-delay:0.2s]" />
                 </div>
               ) : (
-                <p className="text-sm text-slate-300 italic font-semibold leading-relaxed font-inter">
+                <p className="text-sm text-slate-300 italic font-semibold leading-relaxed">
                   <span className="text-red-500 font-black block text-[10px] uppercase mb-1 not-italic">Encrypted Report:</span>
                   "{securityLog}"
                 </p>
               )}
             </div>
-
-            <button onClick={startGame} className="w-full bg-white text-black font-orbitron font-black py-6 rounded-2xl text-2xl shadow-xl active:scale-95 transition-all hover:bg-slate-100">
+            <button onPointerDown={startGame} className="w-full bg-white text-black font-orbitron font-black py-6 rounded-2xl text-2xl shadow-xl transition-all hover:bg-slate-100">
               New Mission
             </button>
           </div>
         </div>
       )}
 
-      {/* Footer Tag */}
       <div className="py-6 text-[10px] font-black text-slate-800 tracking-[0.8em] uppercase z-10">
         Signal Secure // HQ-7
       </div>
@@ -359,7 +345,6 @@ const App: React.FC = () => {
   );
 };
 
-// --- Entry Point ---
 const container = document.getElementById('root');
 if (container) {
   const root = createRoot(container);
